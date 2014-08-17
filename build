@@ -1,0 +1,1116 @@
+#!/bin/sh
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License at <http://www.gnu.org/licenses/> for
+# more details.
+
+##################################
+### MANUAL CONFIGURATION START ###
+##################################
+
+CLEAN=true # clean config
+PURGE=false # delete cached packages
+
+CONFIG=true # do config
+
+BUILD=true # build the image
+CHROOT_MIRROR="http://ftp2.de.debian.org/debian" # which mirror to use for building
+
+HOSTNAME="mabian" # the hostname of the live system
+ARCHITECTURE="amd64" # the architecture - amd64 or i386
+
+LIVE_USERNAME="user" # the username of the live user
+LIVE_PASSWORD="live" # the password for the live user
+
+# the groups for the live user and the standard groups for the installer
+USER_GROUPS="audio bluetooth cdrom dip fax floppy fuse lp lpadmin netdev plugdev powerdev pulse sambashare scanner sudo tape users video voice"
+
+INSTALLER=true # installer (text-mode)
+INSTALLER_GUI=false # installer with gui, sets INSTALLER=true
+
+BINARY_MIRROR="http://http.debian.net/debian" # which mirror to use for the binary image, http.debian.net should redirect to your local mirror
+ARCHIVE_AREAS="main contrib non-free" # the enabled archive areas - main contrib non-free
+FIRMWARE=true # free (and non-free) firmware, depending on your used archive-areas
+
+BACKPORTS=true # enable wheezy-backports and pins it higher then wheezy, except linux-image-*
+TESTING=true # enable testing repo with low pinning 
+
+BASHRC_SCREENFETCH=true # shows system info on every terminal session
+
+KEEP_APT_INDICES=false # saves some space if false
+INSTALL_RECOMMENDS=false # saves much space if false
+
+TORAM=false # moving live system to ram so you can remove the stick/cd after boot, sets INSTALLER_LIVE=false
+
+DESKTOP_BASE=true # Mate DE with some changed standard settings and some basic tools, will set $BACKPORTS=true
+
+#############################################
+# ANYTHING BELOW WILL SET DESKTOP_BASE=true #
+#############################################
+
+PLYMOUTH=true # boot animation (joy from desktop-base)
+INSTALLER_LIVE=true # Icon-Starter to install from live session, sets $INSTALLER_GUI to true
+
+DESKTOP_TOOLS=true # some more desktop tools
+MULTIMEDIA=true # some more tools for audio/photo/video
+
+LIBREOFFICE=true # just the writer from libreoffice
+ICEDOVE=true # email, contacts and calendar, $TESTING will be true to install iceowl-l10n-*
+
+#################################################
+# ANYTHING BELOW ADDS POSSIBLY NON-FREE SOFTTWARE #
+#################################################
+
+LIBDVDCSS2=true # needed for some copy-protection of movie-dvds, adds videolan repo
+MSFONTS=true # microsoft fonts, sets $ARCHIVE_AREAS="main contrib non-free"
+AFLASH=true # adobe flash, sets $ARCHIVE_AREAS="main contrib non-free"
+
+########################################################################
+# ANYTHING BELOW ADDS i386-ARCHITECTURE, IF YOU ARE BUILDING FOR AMD64 #
+########################################################################
+
+PIPELIGHT=true # software to get microsoft silverlight in iceweasel, adds DarkPlayer repo
+
+#################################
+### MANUAL CONFIGURATION END  ###
+#################################
+
+################
+# DEPENDENCIES #
+################
+
+if [ "$(id -u)" != "0" ]; then
+
+echo "This script must be run as root" 1>&2
+exit 1
+
+fi
+
+if [ $(dpkg-query -W -f='${Status}' live-build 2>/dev/null | grep -c "ok installed") -eq 0 ]; then
+
+echo "Install live-build! --> apt-get install live-build" 1>&2
+exit 1
+
+fi
+
+#################
+# APT-CACHER-NG #
+#################
+
+#if [ $(dpkg-query -W -f='${Status}' apt-cacher-ng 2>/dev/null | grep -c "ok installed") -eq 1 ]; then
+#
+#/etc/init.d/apt-cacher-ng start
+#export http_proxy=http://localhost:3142/
+#
+#fi
+
+#########
+# CLEAN #
+#########
+
+if [ "$CLEAN" = true ] ; then
+
+lb clean
+rm -rf config
+rm -rf build.log
+
+fi
+
+if [ "$PURGE" = true ] ; then 
+
+lb clean --purge
+
+fi
+
+######################
+### CONFIG  START ####
+######################
+
+if [ "$CONFIG" = true ] ; then
+
+BUILD_DAY=`date +%Y%m%d`
+lb config
+
+####################
+# BASE LIVE CONFIG #
+####################
+
+#
+# SYSLINUX MENU
+#
+
+if [ "$FIRMWARE" = true ] && [ "$ARCHIVE_AREAS" = "main contrib non-free" ]  ; then
+FREE="-non-free"
+fi
+
+mkdir -p config/includes.binary/isolinux/
+touch config/includes.binary/isolinux/install.cfg
+
+cat << EOF > config/includes.binary/isolinux/menu.cfg
+menu hshift 0
+menu width 82
+menu title $HOSTNAME GNU/Linux 
+include stdmenu.cfg
+menu begin try
+	menu title Select your language and ^try
+	include stdmenu.cfg
+	label mainmenu
+	menu label ^Back..
+	menu exit
+	include try.cfg
+menu end
+menu clear
+include install.cfg
+menu begin advanced
+	menu title Advanced ^options
+	include stdmenu.cfg
+	label mainmenu
+		menu label ^Back..
+		menu exit
+	include advanced.cfg
+menu end
+menu tabmsg $BUILD_DAY-$ARCHITECTURE$FREE
+EOF
+
+echo "label try-failsafe" >> config/includes.binary/isolinux/advanced.cfg
+echo "	menu label Try (^failsafe)" >> config/includes.binary/isolinux/advanced.cfg
+echo "	linux /live/vmlinuz" >> config/includes.binary/isolinux/advanced.cfg
+echo "	initrd /live/initrd.img" >> config/includes.binary/isolinux/advanced.cfg
+echo "  append boot=live config noapic noapm nodma nomce nolapic nomodeset nosmp vga=normal" >> config/includes.binary/isolinux/advanced.cfg
+
+echo "label ^Boot from hard disk" >> config/includes.binary/isolinux/advanced.cfg
+echo "  localboot -1" >> config/includes.binary/isolinux/advanced.cfg
+
+echo "label hdt" >> config/includes.binary/isolinux/advanced.cfg
+echo "	menu label ^Hardware Detection Tool (HDT)" >> config/includes.binary/isolinux/advanced.cfg
+echo "	com32 hdt.c32" >> config/includes.binary/isolinux/advanced.cfg
+
+echo "label memtest86+" >> config/includes.binary/isolinux/advanced.cfg
+echo "	menu label ^Memory Failure Detection (memtest86+)" >> config/includes.binary/isolinux/advanced.cfg
+echo "	kernel /live/memtest" >> config/includes.binary/isolinux/advanced.cfg
+
+cat << EOF > config/hooks/3000-syslinux.hook.binary
+apt-get -y -d install syslinux-themes-debian-wheezy
+dpkg-deb -x /var/cache/apt/archives/syslinux-themes-debian-wheezy*.deb syslinux-themes-debian-wheezy
+apt-get clean
+mv syslinux-themes-debian-wheezy/usr/share/syslinux/themes/debian-wheezy/isolinux-live/splash.png binary/isolinux/splash.png
+rm -rf syslinux-themes-debian-wheezy
+EOF
+
+#
+# SYSLINUX LANGUAGE-ENTRIES
+#
+
+if [ "$TORAM" = true ] ; then
+	INSTALLER_LIVE=false
+	APPEND_TORAM=" toram"
+fi
+if [ "$PLYMOUTH" = true ] ; then
+	APPEND_SPLASH=" vga=792 splash"
+fi
+
+mkdir -p config/includes.chroot/lib/live/config/
+echo "#!/bin/sh" > config/includes.chroot/lib/live/config/3000-reconfigure-tzdata
+
+addLocale() {
+
+echo "label tryin`echo $1 | tr -d ' ' | tr '[:upper:]' '[:lower:]'`" >> config/includes.binary/isolinux/try.cfg
+echo "	menu label $1" >> config/includes.binary/isolinux/try.cfg
+
+if [ "$1" = "^English" ]; then
+echo "	menu default" >> config/includes.binary/isolinux/try.cfg
+fi
+
+echo "	linux /live/vmlinuz" >> config/includes.binary/isolinux/try.cfg
+echo "	initrd /live/initrd.img" >> config/includes.binary/isolinux/try.cfg
+echo "	append boot=live config quiet persistence$APPEND_TORAM$APPEND_SPLASH locales=$2 keyboard-layouts=$3" >> config/includes.binary/isolinux/try.cfg
+echo "	text help" >> config/includes.binary/isolinux/try.cfg
+echo "		$2 $3 $4" >> config/includes.binary/isolinux/try.cfg
+echo "	endtext" >> config/includes.binary/isolinux/try.cfg
+
+echo "if grep -q $2 /etc/default/locale; then echo $4 > /etc/timezone; fi" >> config/includes.chroot/lib/live/config/3000-reconfigure-tzdata
+
+}
+
+addPackages() {
+
+if [ "$1" ]; then
+echo $1 >> config/package-lists/base_lang.list.chroot
+fi
+
+if [ "$2" ] && [ "$DESKTOP_BASE" = true ]; then
+echo $2 >> config/package-lists/desktop_base_lang.list.chroot
+fi
+
+if [ "$3" ] && [ "$ICEDOVE" = true ]; then
+echo $3 >> config/package-lists/icedove_lang.list.chroot
+fi
+
+if [ "$4" ] && [ "$LIBREOFFICE" = true ]; then
+echo $4 >> config/package-lists/libreoffice_lang.list.chroot
+fi
+
+}
+
+#
+# Based on available task-* packages
+#
+
+addLocale "^Albanian" "sq_AL.UTF-8" "us" "Europe/Tirane"
+addPackages "" "task-albanian-desktop iceweasel-l10n-sq" "icedove-l10n-sq"
+
+addLocale "Amharic" "am_ET.UTF-8" "us" "Africa/Addis_Ababa"
+addPackages "task-amharic" "task-amharic-desktop" "" ""
+
+addLocale "Arabic" "ar_SA.UTF-8" "us" "Asia/Riyadh"
+addPackages "task-arabic" "task-arabic-desktop iceweasel-l10n-ar" "icedove-l10n-ar" "libreoffice-l10n-ar"
+
+addLocale "Asturian" "ast_ES.UTF-8" "us" "Europe/Madrid"
+addPackages "task-asturian" "task-asturian-desktop iceweasel-l10n-ast" "icedove-l10n-ast" "libreoffice-l10n-ast"
+
+addLocale "^Basque" "eu_ES.UTF-8" "es" "Europe/Madrid" 
+addPackages "task-basque" "task-asturian-desktop iceweasel-l10n-eu" "icedove-l10n-eu iceowl-l10n-eu" "libreoffice-l10n-eu"
+
+addLocale "Belarusian" "be_BY.UTF-8" "ru" "Europe/Minsk" 
+addPackages "task-belarusian" "task-belarusian-desktop	iceweasel-l10n-be" "icedove-l10n-be" "libreoffice-l10n-be"
+
+addLocale "Bengali" "bn_BD.UTF-8" "us" "Asia/Dhaka" 
+addPackages "task-bengali" "task-bengali-desktop iceweasel-l10n-bn-bd" "icedove-l10n-bn-bd" "libreoffice-l10n-bn hyphen-bn"
+
+addLocale "Bosnian" "bs_BA.UTF-8" "us" "Europe/Sarajevo" 
+addPackages "task-bosnian" "task-bosnian-desktop iceweasel-l10n-bs" "" "libreoffice-l10n-bs"
+
+addLocale "Brazilian Portuguese" "pt_BR.utf8" "pt-latin1" "America/Sao_Paulo" 
+addPackages "task-brazilian-portuguese" "task-brazilian-portuguese-desktop iceweasel-l10n-pt-br" "icedove-l10n-pt-br" "libreoffice-l10n-pt-br myspell-pt-br"
+
+addLocale "British English" "en_GB.UTF-8" "uk" "Europe/London" 
+addPackages "" "task-british-desktop iceweasel-l10n-en-gb" "icedove-l10n-en-gb iceowl-l10n-en-gb" "libreoffice-l10n-en-gb myspell-en-gb"
+
+addLocale "Bulgarian" "bg_BG.UTF-8" "bg_bds-utf8" "Europe/Sofia" 
+addPackages "task-bulgarian" "task-bulgarian-desktop iceweasel-l10n-bg" "icedove-l10n-bg" "libreoffice-l10n-bg myspell-bg"
+
+addLocale "^Catalan" "ca_ES.UTF-8" "bg_bds-utf8" "Europe/Madrid" 
+addPackages "task-catalan" "task-catalan-desktop iceweasel-l10n-ca" "icedove-l10n-ca iceowl-l10n-ca" "libreoffice-l10n-ca myspell-ca hyphen-ca mythes-ca"
+
+addLocale "Chinese Simplified" "zh_CN.UTF-8" "us" "Asia/Shanghai" 
+addPackages "task-chinese-s" "task-chinese-s-desktop iceweasel-l10n-zh-cn" "icedove-l10n-zh-cn iceowl-l10n-zh-cn" "libreoffice-l10n-zh-cn"
+
+addLocale "Chinese Traditional" "zh_TW.UTF-8" "us" "Asia/Taipei" 
+addPackages "task-chinese-t" "task-chinese-t-desktop iceweasel-l10n-zh-tw" "icedove-l10n-zh-tw iceowl-l10n-zh-tw" "libreoffice-l10n-zh-tw"
+
+addLocale "Croatian" "hr_HR.UTF-8" "croat" "Europe/Zagreb" 
+addPackages "task-croatian" "task-croatian-desktop iceweasel-l10n-hr" "icedove-l10n-hr iceowl-l10n-hr" "libreoffice-l10n-hr myspell-hr"
+
+addLocale "Cyrillic" "uz_UZ.UTF-8" "us" "Etc/UTC" 
+addPackages "task-cyrillic" "task-cyrillic-desktop" "" ""
+
+addLocale "Czech" "cs_CZ.UTF-8" "cz-lat2" "Europe/Prague" 
+addPackages "task-czech" "task-czech-desktop iceweasel-l10n-cs" "icedove-l10n-cs iceowl-l10n-cs" "libreoffice-l10n-cs myspell-cs mythes-cs"
+
+addLocale "^Danish" "da_DK.UTF-8" "dk" "Europe/Copenhagen" 
+addPackages "task-danish" "task-danish-desktop iceweasel-l10n-da" "icedove-l10n-da iceowl-l10n-da" "libreoffice-l10n-da myspell-da"
+
+addLocale "Dutch" "nl_NL.UTF-8" "nl" "Europe/Amsterdam" 
+addPackages "task-dutch" "task-dutch-desktop iceweasel-l10n-nl" "icedove-l10n-nl iceowl-l10n-nl" "libreoffice-l10n-nl myspell-nl"
+
+addLocale "Dzongkha" "dz_BT.UTF-8" "us" "Asia/Thimphu" 
+addPackages "" "task-dzongkha-desktop" "" ""
+
+addLocale "^English" "en_US.UTF-8" "us" "US/Central" 
+addPackages "task-english" "" "" "" "myspell-en-us hyphen-en-us mythes-en-us"
+
+addLocale "Esperanto" "eo.UTF-8" "us" "Etc/UTC" 
+addPackages "task-esperanto" "task-esperanto-desktop iceweasel-l10n-eo" "" "libreoffice-l10n-eo myspell-eo"
+
+addLocale "Estonian" "et_EE.UTF-8" "et" "Europe/Tallinn" 
+addPackages "task-estonian" "task-estonian-desktop iceweasel-l10n-et" "icedove-l10n-et iceowl-l10n-et" "libreoffice-l10n-et myspell-et"
+
+addLocale "Finnish" "fi_FI.UTF-8" "fi" "Europe/Helsinki" 
+addPackages "task-finnish" "task-finnish-desktop iceweasel-l10n-fi" "icedove-l10n-fi iceowl-l10n-fi" "libreoffice-l10n-fi myspell-fi"
+
+addLocale "^French" "fr_FR.UTF-8" "fr-latin9" "Europe/Paris" 
+addPackages "task-french" "task-french-desktop iceweasel-l10n-fr" "icedove-l10n-fr iceowl-l10n-fr"  "libreoffice-l10n-fr myspell-fr hyphen-fr mythes-fr"
+
+addLocale "^Galician" "gl_ES.UTF-8" "es" "Europe/Madrid" 
+addPackages "task-galician" "task-galician-desktop iceweasel-l10n-gl" "icedove-l10n-gl" ""
+
+addLocale "Georgian" "ka_GE.UTF-8" "es" "Asia/Tbilisi" 
+addPackages "task-galician" "task-galician-desktop" "" "libreoffice-l10n-ka"
+
+addLocale "German" "de_DE.UTF-8" "de" "Europe/Berlin" 
+addPackages "task-german" "task-german-desktop iceweasel-l10n-de" "icedove-l10n-de iceowl-l10n-de" "libreoffice-l10n-de myspell-de-de hyphen-de mythes-de"
+
+addLocale "Greek" "el_GR.UTF-8" "gr" "Europe/Athens" 
+addPackages "task-greek" "task-greek-desktop iceweasel-l10n-el" "icedove-l10n-el" "libreoffice-l10n-el myspell-el-gr"
+
+addLocale "Gujarati" "gu_IN.UTF-8" "us" "Asia/Kolkata" 
+addPackages "task-gujarati" "task-gujarati-desktop iceweasel-l10n-gu-in" "" "libreoffice-l10n-gu"
+
+addLocale "^Hebrew" "he_IL.UTF-8" "us" "Asia/Jerusalem" 
+addPackages "task-hebrew" "task-hebrew-desktop iceweasel-l10n-he" "icedove-l10n-he" "libreoffice-l10n-he myspell-he"
+
+addLocale "Hindi" "hi_IN.UTF-8" "us" "Asia/Kolkata" 
+addPackages "task-hindi" "task-hindi-desktop iceweasel-l10n-hi-in" "" "libreoffice-l10n-hi hyphen-hi"
+
+addLocale "Hungarian" "hu_HU.UTF-8" "hu" "Europe/Budapest" 
+addPackages "task-hungarian" "task-hungarian-desktop iceweasel-l10n-hu" "icedove-l10n-hu iceowl-l10n-hu" "libreoffice-l10n-hu myspell-hu hyphen-hu mythes-hu"
+
+addLocale "^Icelandic" "is_IS.UTF-8" "is-latin1" "Atlantic/Reykjavik" 
+addPackages "task-icelandic" "task-icelandic-desktop iceweasel-l10n-is" "icedove-l10n-is iceowl-l10n-is" "libreoffice-l10n-is"
+
+addLocale "Indonesian" "id_ID.UTF-8" "us" "Asia/Jakarta" 
+addPackages "" "task-indonesian-desktop iceweasel-l10n-id" "icedove-l10n-id " "libreoffice-l10n-id"
+
+addLocale "Irish" "ga_IE.UTF-8" "uk" "Europe/Dublin" 
+addPackages "task-irish" "task-irish-desktop iceweasel-l10n-ga-ie" "icedove-l10n-ga-ie iceowl-l10n-ga-ie" "libreoffice-l10n-ga myspell-ga"
+
+addLocale "Italian" "it_IT.UTF-8" "it" "Europe/Rome" 
+addPackages "task-italian" "task-italian-desktop iceweasel-l10n-it" "icedove-l10n-it iceowl-l10n-it" "libreoffice-l10n-it myspell-it hyphen-it mythes-it"
+
+addLocale "^Japanese" "ja_JP.UTF-8" "jp106" "Asia/Tokyo"
+addPackages "task-japanese" "task-japanese-desktop iceweasel-l10n-ja" "icedove-l10n-ja iceowl-l10n-ja" "libreoffice-l10n-ja"
+
+addLocale "^Kannada" "kn_IN.UTF-8" "us" "Asia/Kolkata" 
+addPackages "" "task-kannada-desktop iceweasel-l10n-kn" "" "hyphen-kn"
+
+addLocale "Kazakh" "kk_KZ.UTF-8" "us" "Asia/Almaty" 
+addPackages "task-kazakh" "task-kazakh-desktop iceweasel-l10n-kk" "" "libreoffice-l10n-kk"
+
+addLocale "Khmer" "km_KH.UTF-8" "us" "Asia/Phnom_Penh" 
+addPackages "task-khmer" "task-khmer-desktop iceweasel-l10n-km" "" "libreoffice-l10n-km"
+
+addLocale "Korean" "ko_KR.UTF-8" "us" "Asia/Seoul" 
+addPackages "task-korean" "task-korean-desktop iceweasel-l10n-ko" "icedove-l10n-ko iceowl-l10n-ko" "libreoffice-l10n-ko"
+
+addLocale "Kurdish" "ku_TR.UTF-8" "us" "Asia/Baghdad" 
+addPackages "task-kurdish" "task-kurdish-desktop iceweasel-l10n-ku" "" "libreoffice-l10n-ku myspell-ku"
+
+addLocale "^Latvian" "lv_LV.UTF-8" "us" "Europe/Riga" 
+addPackages "task-latvian" "task-latvian-desktop iceweasel-l10n-lv" "" "libreoffice-l10n-lv myspell-lv"
+
+addLocale "Lithuanian" "lt_LT.UTF-8" "us" "Europe/Vilnius" 
+addPackages "task-lithuanian" "task-lithuanian-desktop iceweasel-l10n-lt" "icedove-l10n-lt iceowl-l10n-lt" "libreoffice-l10n-lt myspell-lt"
+
+addLocale "^Macedonian" "mk_MK.UTF-8" "mk" "Europe/Skopje" 
+addPackages "task-macedonian" "task-macedonian-desktop iceweasel-l10n-mk" "" "libreoffice-l10n-mk"
+
+addLocale "Malayalam" "ml_IN.UTF-8" "us" "Asia/Kolkata" 
+addPackages "task-malayalam" "task-malayalam-desktop iceweasel-l10n-ml" "" "libreoffice-l10n-ml"
+
+addLocale "Marathi" "mr_IN.UTF-8" "us" "Asia/Kolkata" 
+addPackages "task-marathi" "task-marathi-desktop iceweasel-l10n-mr" "" "libreoffice-l10n-mr hyphen-mr"
+
+addLocale "Nepali" "ne_NP.UTF-8" "us" "Asia/Kathmandu" 
+addPackages "" "task-nepali-desktop" "" "libreoffice-l10n-ne mythes-ne"
+
+addLocale "^Northern Sami" "se_NO.UTF-8" "us" "Europe/Oslo" 
+addPackages "task-northern-sami" "task-northern-sami-desktop" "" ""
+
+addLocale "Norwegian" "nb_NO.UTF-8" "no" "Europe/Oslo" 
+addPackages "task-norwegian" "task-norwegian-desktop iceweasel-l10n-nb-no" "icedove-l10n-nb-no iceowl-l10n-nb-no" "libreoffice-l10n-nb myspell-nb"
+
+addLocale "^Persian" "fa_IR.UTF-8" "us" "Asia/Tehran" 
+addPackages "task-persian" "task-persian-desktop iceweasel-l10n-fa" "" "" "myspell-fa"
+
+addLocale "Polish" "pl_PL.UTF-8" "pl2" "Europe/Warsaw" 
+addPackages "task-polish" "task-polish-desktop iceweasel-l10n-pl" "icedove-l10n-pl iceowl-l10n-pl" "libreoffice-l10n-pl myspell-pl hyphen-pl mythes-pl"
+
+addLocale "Portuguese" "pt_PT.UTF-8" "pt-latin1" "Europe/Lisabon" 
+addPackages "task-portuguese" "task-portuguese-desktop iceweasel-l10n-pt-pt" "icedove-l10n-pt-pt iceowl-l10n-pt-pt" "libreoffice-l10n-pt myspell-pt"
+
+addLocale "Punjabi" "pa_IN.UTF-8" "us" "Asia/Kolkata" 
+addPackages "task-punjabi" "task-punjabi-desktop iceweasel-l10n-pa-in" "icedove-l10n-pa-in " "libreoffice-l10n-pa-in hyphen-pa"
+
+addLocale "^Romanian" "ro_RO.UTF-8" "ro" "Europe/Bucharest" 
+addPackages "task-romanian" "task-romanian-desktop iceweasel-l10n-ro" "icedove-l10n-ro" "libreoffice-l10n-ro hyphen-ro mythes-ro"
+
+addLocale "Russian" "ru_RU.UTF-8" "ru" "Europe/Moscow" 
+addPackages "task-russian" "task-russian-desktop iceweasel-l10n-ru" "icedove-l10n-ru iceowl-l10n-ru" "libreoffice-l10n-ru myspell-ru hyphen-ru mythes-ru"
+
+addLocale "^Serbian" "sr_RS.UTF-8" "sr-cy" "Europe/Belgrad" 
+addPackages "task-serbian" "task-serbian-desktop iceweasel-l10n-sr" "icedove-l10n-sr " "libreoffice-l10n-sr hyphen-sr"
+
+addLocale "Sinhala" "si_LK.UTF-8" "us" "Asia/Colombo" 
+addPackages "" "task-sinhala-desktop iceweasel-l10n-si" "icedove-l10n-si" "" ""
+
+addLocale "Slovak" "sk_SK.UTF-8" "sk-qwerty" "Europe/Bratislava" 
+addPackages "task-slovak" "task-slovak-desktop iceweasel-l10n-sk" "icedove-l10n-sk iceowl-l10n-sk" "libreoffice-l10n-sk myspell-sk mythes-sk"
+
+addLocale "Slovenian" "sl_SI.UTF-8" "slovene" "Europe/Ljubljana" 
+addPackages "task-slovenian" "task-slovenian-desktop iceweasel-l10n-sl" "icedove-l10n-sl" "libreoffice-l10n-sl myspell-sl hyphen-sl"
+
+addLocale "South Africa English" "en_ZA.UTF-8" "es" "Africa/Johannesburg" 
+addPackages "task-english" "task-south-african-english-desktop iceweasel-l10n-en-za" "" "" "myspell-en-za"
+
+addLocale "Spanish" "es_ES.UTF-8" "es" "Europe/Madrid" 
+addPackages "task-spanish" "task-spanish-desktop iceweasel-l10n-es-es" "icedove-l10n-es-es iceowl-l10n-es-es" "libreoffice-l10n-es myspell-es"
+
+addLocale "Swedish" "sv_SE.UTF-8" "sv-latin1" "Europe/Stockholm" 
+addPackages "task-swedish" "task-swedish-desktop iceweasel-l10n-sv-se" "icedove-l10n-sv-se " "libreoffice-l10n-sv myspell-sv-se"
+
+addLocale "^Tagalog" "tl.UTF-8" "us" "Asia/Manila" 
+addPackages "task-tagalog" "" "" "myspell-tl"
+
+addLocale "Tamil" "ta_IN.UTF-8" "us" "Asia/Kolkata" 
+addPackages "task-tamil" "task-tamil-desktop iceweasel-l10n-ta-lk" "icedove-l10n-ta-lk" "libreoffice-l10n-ta hyphen-ta"
+
+addLocale "Telugu" "te_IN.UTF-8" "us" "Asia/Kolkata" 
+addPackages "task-telugu" "task-telugu-desktop iceweasel-l10n-te" "" "libreoffice-l10n-te hyphen-te"
+
+addLocale "Thai" "th_TH.UTF-8" "us" "Asia/Bangkok" 
+addPackages "task-thai" "task-thai-desktop iceweasel-l10n-th" "" "libreoffice-l10n-th myspell-th"
+
+addLocale "Turkish" "tr_TR.UTF-8" "trq" "Europe/Istanbul" 
+addPackages "task-turkish" "task-turkish-desktop iceweasel-l10n-tr" "icedove-l10n-tr" "libreoffice-l10n-tr"
+
+addLocale "^Ukrainian" "uk_UA.UTF-8" "ua-utf" "Europe/Kiev" 
+addPackages "task-ukrainian" "task-ukrainian-desktop iceweasel-l10n-uk" "icedove-l10n-uk " "libreoffice-l10n-uk myspell-uk"
+
+addLocale "Uyghur" "zh_CN.UTF-8" "us" "Asia/Urumqi" 
+addPackages "" "task-uyghur-desktop" "" ""
+
+addLocale "^Vietnamese" "vi_VN.UTF-8" "us" "Asia/Saigon" 
+addPackages "" "task-vietnamese-desktop iceweasel-l10n-vi" "icedove-l10n-vi" "libreoffice-l10n-vi"
+
+addLocale "^Welsh" "cy_GB.UTF-8" "uk" "Europe/London" 
+addPackages "task-welsh" "task-welsh-desktop iceweasel-l10n-cy" "" "libreoffice-l10n-cy"
+
+addLocale "^Xhosa" "xh_ZA.UTF-8" "us" "Africa/Johannesburg" 
+addPackages "" "task-xhosa-desktop" "" "libreoffice-l10n-xh"
+
+echo "dpkg-reconfigure -f noninteractive tzdata" >> config/includes.chroot/lib/live/config/3000-reconfigure-tzdata
+chmod +x config/includes.chroot/lib/live/config/3000-reconfigure-tzdata
+
+#
+# BASE PACKAGES
+#
+
+cat << EOF > config/package-lists/base.list.chroot
+console-common
+console-setup
+keyboard-configuration
+live-config
+locales
+sudo
+user-setup
+EOF
+
+cat << EOF > config/package-lists/base_tools.list.chroot
+bash-completion
+command-not-found
+cryptsetup
+dosfstools
+e2fsprogs
+eject
+hdparm
+ntfs-3g
+parted
+pciutils
+unzip
+usbutils
+zip
+ntp
+EOF
+
+cat << EOF > config/hooks/3000-base.hook.chroot
+echo "APT::Install-Recommends "0";" >> /etc/apt/apt.conf
+echo "APT::Install-Suggests "0";" >> /etc/apt/apt.conf
+
+echo "# enable bash completion in interactive shells" >> /etc/bash.bashrc
+echo "if ! shopt -oq posix; then" >> /etc/bash.bashrc
+echo "  if [ -f /usr/share/bash-completion/bash_completion ]; then" >> /etc/bash.bashrc
+echo "    . /usr/share/bash-completion/bash_completion" >> /etc/bash.bashrc
+echo "  elif [ -f /etc/bash_completion ]; then" >> /etc/bash.bashrc
+echo "    . /etc/bash_completion" >> /etc/bash.bashrc
+echo "  fi" >> /etc/bash.bashrc
+echo "fi" >> /etc/bash.bashrc
+
+#echo "%sudo ALL = NOPASSWD: /usr/bin/apt-get up*" >> /etc/sudoers.d/updates
+
+update-command-not-found
+
+EOF
+
+echo "#!/bin/sh" >> config/includes.chroot/lib/live/config/3003-setlivepassword
+echo "echo "$LIVE_USERNAME:$LIVE_PASSWORD" | chpasswd" >> config/includes.chroot/lib/live/config/3003-setlivepassword
+chmod +x config/includes.chroot/lib/live/config/3000-reconfigure-tzdata
+
+#######################
+# BASHRC_SCREENFETCH  #
+#######################
+
+if [ "$BASHRC_SCREENFETCH" = true ] ; then
+
+cat << EOF > config/hooks/3001-bashrc_screenfetch.hook.chroot
+wget --no-check-certificate https://raw.githubusercontent.com/KittyKatt/screenFetch/master/screenfetch-dev -O /usr/local/bin/screenfetch-dev
+chmod +x /usr/local/bin/screenfetch-dev
+echo "" >> /etc/bash.bashrc
+echo "/usr/local/bin/screenfetch-dev -c4 -E" >> /etc/bash.bashrc
+echo "" > /etc/motd
+EOF
+
+fi
+
+#################
+# DESKTOP_TOOLS #
+#################
+
+if [ "$DESKTOP_TOOLS" = true ] ; then
+
+DESKTOP_BASE=true
+
+cat << EOF > config/package-lists/desktop_tools.list.chroot
+blueman
+caja-gksu
+caja-image-converter
+caja-open-terminal
+caja-sendto
+caja-share 
+ffmpegthumbnailer
+filezilla
+gnome-disk-utility
+gnome-games
+gnome-nettool
+mail-notification
+mate-applets
+mate-gnome-main-menu-applet
+mate-netspeed
+mate-sensors-applet 
+mate-system-monitor
+mate-user-share
+mate-utils
+nfs-common
+pidgin
+pidgin-plugin-pack
+pidgin-themes
+pinta
+samba
+synaptic
+system-config-printer
+system-config-printer-udev
+transmission-gtk
+xchat
+EOF
+
+cat << EOF > config/hooks/3002-desktop_tools.hook.chroot
+mv /usr/share/applications/display.im6.desktop /usr/share/applications/display.im6.desktop.invisible
+EOF
+
+fi
+
+##############
+# MULTIMEDIA #
+##############
+
+if [ "$MULTIMEDIA" = true ] ; then
+
+DESKTOP_BASE=true
+
+cat << EOF > config/package-lists/multimedia.list.chroot
+brasero
+browser-plugin-vlc
+flac
+gnome-codec-install
+gstreamer0.10-ffmpeg
+gstreamer0.10-plugins-bad
+gstreamer0.10-plugins-base
+gstreamer0.10-plugins-good
+gstreamer0.10-plugins-ugly
+gstreamer0.10-pulseaudio
+icedtea-7-plugin
+lame
+openjdk-7-jre
+pavucontrol
+pulseaudio-utils 
+simple-scan
+totem
+totem-plugins
+totem-mozilla
+tvtime
+vlc
+vlc-plugin-notify
+vlc-plugin-pulse
+wavpack
+EOF
+
+fi
+
+###############
+# LIBREOFFICE #
+###############
+
+if [ "$LIBREOFFICE" = true ] ; then
+
+DESKTOP_BASE=true
+
+cat << EOF > config/package-lists/libreoffice.list.chroot
+libreoffice-calc
+libreoffice-gtk
+libreoffice-impress
+libreoffice-pdfimport
+libreoffice-writer
+EOF
+
+fi
+
+###########
+# ICEDOVE #
+###########
+
+if [ "$ICEDOVE" = true ] ; then
+
+DESKTOP_BASE=true
+TESTING=true
+
+cat << EOF > config/package-lists/icedove.list.chroot
+calendar-google-provider
+icedove
+icedove-gcontactsync
+iceowl-extension
+EOF
+
+fi
+
+##############
+# LIBDVDCSS2 #
+##############
+
+if [ "$LIBDVDCSS2" = true ] ; then
+
+FREE="-non-free"
+DESKTOP_BASE=true
+
+cat << EOF > config/archives/videolan.list.chroot
+deb http://download.videolan.org/pub/debian/stable/ /
+deb-src http://download.videolan.org/pub/debian/stable/ /
+EOF
+cp config/archives/videolan.list.chroot config/archives/videolan.list.binary
+
+wget http://download.videolan.org/pub/debian/videolan-apt.asc -O config/archives/videolan.key.chroot
+cp config/archives/videolan.key.chroot config/archives/videolan.key.binary
+
+cat << EOF > config/package-lists/libdvdcss2.list.chroot
+libdvdcss2
+EOF
+
+fi
+
+###########
+# MSFONTS #
+###########
+
+if [ "$MSFONTS" = true ] ; then
+
+FREE="-non-free"
+DESKTOP_BASE=true
+ARCHIVE_AREAS="main contrib non-free"
+
+cat << EOF > config/package-lists/libdvdcss2.list.chroot
+ttf-mscorefonts-installer
+EOF
+
+fi
+
+###########
+# AFLASH  #
+###########
+
+if [ "$AFLASH" = true ] ; then
+
+FREE="-non-free"
+DESKTOP_BASE=true
+ARCHIVE_AREAS="main contrib non-free"
+
+cat << EOF > config/hooks/3005_flashplugin-nonfree.hook.chroot
+apt-get install -y flashplugin-nonfree
+EOF
+
+fi
+
+#############
+# PIPELIGHT #
+#############
+
+if [ "$PIPELIGHT" = true ] ; then
+
+FREE="-non-free"
+DESKTOP_BASE=true
+
+cat << EOF > config/archives/pipelight.list.chroot
+deb http://download.opensuse.org/repositories/home:/DarkPlayer:/Pipelight/Debian_7.0/ ./
+EOF
+cp config/archives/pipelight.list.chroot config/archives/pipelight.list.binary
+
+wget http://download.opensuse.org/repositories/home:/DarkPlayer:/Pipelight/Debian_7.0/Release.key -O config/archives/pipelight.key.chroot
+cp config/archives/pipelight.key.chroot config/archives/pipelight.key.binary
+
+if [ "$ARCHITECTURE" = "amd64" ] ; then
+echo "dpkg --add-architecture i386" > config/hooks/3004_pipelight.hook.chroot
+echo "apt-get update" >> config/hooks/3004_pipelight.hook.chroot
+fi
+echo "apt-get install -y pipelight" >> config/hooks/3004_pipelight.hook.chroot
+
+fi
+
+##################
+# INSTALLER_LIVE #
+##################
+
+if [ "$INSTALLER_LIVE" = true ] ; then
+
+DESKTOP_BASE=true
+INSTALLER=true
+INSTALLER_GUI=true
+
+cat << EOF > config/package-lists/installer_live.list.chroot
+debian-installer-launcher
+EOF
+
+cat << EOF > config/hooks/3003-installer_live.hook.chroot
+apt-get purge -y xterm
+sed -i "s|Name=.*|Name=Install $HOSTNAME GNU/Linux|" /usr/share/applications/debian-installer-launcher.desktop
+sed -i 's|Exec=.*|Exec=gksu "x-terminal-emulator -e /usr/sbin/debian-installer-launcher"|' /usr/share/applications/debian-installer-launcher.desktop
+EOF
+
+fi
+
+#############
+# INSTALLER #
+#############
+
+if [ "$INSTALLER" = true ] || [ "$INSTALLER_GUI" = true ]; then
+
+INSTALLER=true
+
+#
+# SYSLINUX MENU ENTRIES
+#
+
+if [ "$INSTALLER_GUI" = true ] ; then
+
+cat << EOF > config/includes.binary/isolinux/install.cfg
+label installgui
+	menu label ^Install
+	linux /install/gtk/vmlinuz
+	initrd /install/gtk/initrd.gz
+	append video=vesa:ywrap,mtrr vga=788 -- quiet
+EOF
+
+echo "label install" >> config/includes.binary/isolinux/advanced.cfg
+echo "	menu label ^Install (text-mode)" >> config/includes.binary/isolinux/advanced.cfg
+echo "	linux /install/vmlinuz" >> config/includes.binary/isolinux/advanced.cfg
+echo "	initrd /install/initrd.gz" >> config/includes.binary/isolinux/advanced.cfg
+echo "	append vga=788 -- quiet" >> config/includes.binary/isolinux/advanced.cfg
+
+else
+
+cat << EOF > config/includes.binary/isolinux/install.cfg
+label install
+	menu label ^Install
+	linux /install/vmlinuz
+	initrd /install/initrd.gz
+	append vga=788 -- quiet
+EOF
+
+fi
+
+echo "label expert" >> config/includes.binary/isolinux/advanced.cfg
+echo "	menu label ^Expert Install (text-mode)" >> config/includes.binary/isolinux/advanced.cfg
+echo "	linux /install/vmlinuz" >> config/includes.binary/isolinux/advanced.cfg
+echo "	initrd /install/initrd.gz" >> config/includes.binary/isolinux/advanced.cfg
+echo "	append priority=low vga=788 -- quiet" >> config/includes.binary/isolinux/advanced.cfg
+
+echo "label rescue" >> config/includes.binary/isolinux/advanced.cfg
+echo "	menu label ^Rescue Mode (text-mode)" >> config/includes.binary/isolinux/advanced.cfg
+echo "	linux /install/vmlinuz" >> config/includes.binary/isolinux/advanced.cfg
+echo "	initrd /install/initrd.gz" >> config/includes.binary/isolinux/advanced.cfg
+echo "	append rescue/enable=true vga=788 -- quiet" >> config/includes.binary/isolinux/advanced.cfg
+
+#
+# PRESEED
+#
+
+cat << EOF > config/package-lists/installer.list.chroot
+os-prober
+EOF
+
+cat << EOF > config/includes.debian-installer/preseed.cfg
+d-i apt-setup/use_mirror boolean false
+d-i clock-setup/ntp boolean true
+d-i clock-setup/ntp-server string 0.debian.pool.ntp.org
+d-i grub-installer/only_debian boolean true
+d-i grub-installer/with_other_os boolean true
+d-i netcfg/enable boolean false
+d-i netcfg/get_domain string
+d-i passwd/root-login boolean false
+d-i passwd/user-default-groups $USER_GROUPS
+d-i preseed/late_command string echo 'deb $BINARY_MIRROR wheezy $ARCHIVE_AREAS' > /target/etc/apt/sources.list; echo '#deb-src $BINARY_MIRROR wheezy $ARCHIVE_AREAS' >> /target/etc/apt/sources.list; echo '' >> /target/etc/apt/sources.list; echo 'deb http://security.debian.org/ wheezy/updates $ARCHIVE_AREAS' >> /target/etc/apt/sources.list; echo '#deb-src http://security.debian.org/ wheezy/updates $ARCHIVE_AREAS' >> /target/etc/apt/sources.list
+EOF
+
+fi
+
+############
+# PLYMOUTH #
+############
+
+if [ "$PLYMOUTH" = true ] ; then
+
+DESKTOP_BASE=true
+
+cat << EOF > config/package-lists/plymouth.list.chroot
+plymouth
+plymouth-drm
+grub-pc
+EOF
+
+cat << EOF > config/hooks/3004-plymouth.hook.chroot
+plymouth-set-default-theme -R joy
+sed -i 's|/sbin/plymouthd --mode=shutdown --attach-to-session|/sbin/plymouthd --mode=shutdown --tty=tty1|' /etc/init.d/plymouth
+sed -i "s|quiet|quiet splash|" /etc/default/grub
+sed -i "s|#GRUB_GFXMODE=.*|GRUB_GFXMODE=1024x768|" /etc/default/grub
+echo "GRUB_GFXPAYLOAD_LINUX=1024x768" >> /etc/default/grub
+EOF
+
+fi
+
+################
+# DESKTOP_BASE #
+################
+
+if [ "$DESKTOP_BASE" = true ] ; then
+
+BACKPORTS=true
+
+cat << EOF > config/package-lists/desktop_base.list.chroot
+dconf-tools
+desktop-base
+gvfs-backends
+lightdm
+lightdm-gtk-greeter
+mate-desktop-environment-core
+mate-notification-daemon
+mate-screensaver
+mozo
+software-properties-gtk
+update-notifier
+xdg-user-dirs-gtk
+xserver-xorg
+EOF
+
+cat << EOF > config/package-lists/desktop_base_tools.list.chroot
+alsa-base
+alsa-utils
+atril
+engrampa
+eom
+galculator
+gparted
+iceweasel
+mate-icon-theme-faenza
+mate-media
+mate-media-pulse
+mate-power-manager
+mate-themes
+mobile-broadband-provider-info
+modemmanager
+network-manager-gnome
+network-manager-openconnect-gnome
+network-manager-openvpn-gnome
+network-manager-pptp-gnome
+network-manager-vpnc-gnome
+pluma
+seahorse
+wireless-tools
+EOF
+
+cat << EOF > config/hooks/3005-desktop_base.hook.chroot
+sed -i 's|greeter-hide-users=true|greeter-hide-users=false|' /etc/lightdm/lightdm.conf
+
+dbus-launch --exit-with-session gsettings set org.mate.background picture-filename "/usr/share/backgrounds/mate/desktop/Float-into-MATE.png"
+dbus-launch --exit-with-session gsettings set org.mate.caja.desktop computer-icon-visible false
+dbus-launch --exit-with-session gsettings set org.mate.caja.desktop home-icon-visible false
+dbus-launch --exit-with-session gsettings set org.mate.caja.desktop trash-icon-visible false
+dbus-launch --exit-with-session gsettings set org.mate.caja.desktop volumes-visible false
+dbus-launch --exit-with-session gsettings set org.mate.caja.preferences always-use-location-entry true
+dbus-launch --exit-with-session gsettings set org.mate.interface gtk-theme "Mist"
+dbus-launch --exit-with-session gsettings set org.mate.interface icon-theme 'matefaenza'
+dbus-launch --exit-with-session gsettings set org.mate.Marco.general compositing-manager true
+dbus-launch --exit-with-session gsettings set org.mate.Marco.general side-by-side-tiling true
+dbus-launch --exit-with-session gsettings set org.mate.media-handling automount-open false
+dbus-launch --exit-with-session gsettings set org.mate.NotificationDaemon theme "slider"
+dbus-launch --exit-with-session gsettings set org.mate.peripherals-mouse cursor-theme "mate"
+dbus-launch --exit-with-session gsettings set org.mate.screensaver lock-delay 10
+dbus-launch --exit-with-session gsettings set org.mate.screensaver mode "single"
+dbus-launch --exit-with-session gsettings set org.mate.screensaver themes "['screensavers-footlogo-floaters']"
+dbus-launch --exit-with-session gsettings set org.mate.screensaver user-switch-enabled false
+
+mv /root/.config /etc/skel/
+EOF
+
+cat << EOF > config/includes.chroot/lib/live/config/3001-updatenotifier-aptfile
+#!/bin/sh
+mkdir -p /home/$LIVE_USERNAME/.update-notifier/
+echo -n "apt-file-update " > /home/$LIVE_USERNAME/.update-notifier/hooks_seen
+date +%s >> /home/$LIVE_USERNAME/.update-notifier/hooks_seen
+echo -n " 0" >> /home/$LIVE_USERNAME/.update-notifier/hooks_seen
+chown $LIVE_USERNAME:$LIVE_USERNAME /home/$LIVE_USERNAME/.update-notifier/hooks_seen
+EOF
+chmod +x config/includes.chroot/lib/live/config/3001-updatenotifier-aptfile
+
+fi
+
+#############
+# LB CONFIG #
+#############
+
+mkdir -p config/includes.chroot/etc/live/config
+cat << EOF > config/includes.chroot/etc/live/config/user-setup.conf
+LIVE_HOSTNAME=$HOSTNAME
+LIVE_USERNAME=$LIVE_USERNAME
+LIVE_USER_FULLNAME="$HOSTNAME Live User"
+LIVE_USER_DEFAULT_GROUPS="$USER_GROUPS"
+EOF
+
+lb config --apt-indices $KEEP_APT_INDICES
+lb config --apt-recommends $INSTALL_RECOMMENDS
+
+lb config --architectures $ARCHITECTURE
+
+lb config --binary-images "iso-hybrid"
+lb config --checksums sha1
+
+lb config --iso-application $HOSTNAME_$BUILD_DAY-$ARCHITECTURE$FREE
+lb config --iso-volume $HOSTNAME_$BUILD_DAY-$ARCHITECTURE$FREE
+
+LB_INSTALLER="false"
+if [ "$INSTALLER" = true ] ; then
+LB_INSTALLER="live"
+fi
+lb config --debian-installer $LB_INSTALLER
+lb config --debian-installer-gui $INSTALLER_GUI
+
+lb config --distribution "wheezy"
+
+LB_FLAVOUR="amd64"
+if [ "$ARCHITECTURE" = "i386" ] ; then
+LB_FLAVOUR="486"
+fi
+lb config --linux-flavours $LB_FLAVOUR
+
+lb config --parent-mirror-bootstrap $CHROOT_MIRROR
+lb config --parent-mirror-binary $BINARY_MIRROR
+
+lb config --parent-archive-areas $ARCHIVE_AREAS
+lb config --archive-areas $ARCHIVE_AREAS
+
+lb config --firmware-chroot $FIRMWARE
+lb config --firmware-binary $FIRMWARE 
+
+lb config --system live
+lb config --win32-loader false
+
+#############
+# BACKPORTS #
+#############
+
+if [ "$BACKPORTS" = true ] ; then
+
+cat << EOF > config/archives/wheezy_backports.list.chroot
+deb $CHROOT_MIRROR wheezy-backports $ARCHIVE_AREAS
+#deb-src $CHROOT_MIRROR wheezy-backports $ARCHIVE_AREAS
+EOF
+cat << EOF > config/archives/wheezy_backports.list.binary
+deb $BINARY_MIRROR wheezy-backports $ARCHIVE_AREAS
+#deb-src $BINARY_MIRROR wheezy-backports $ARCHIVE_AREAS
+EOF
+
+
+cat << EOF > config/archives/wheezy_backports.pref.chroot
+Package: *
+Pin: release n=wheezy-backports
+Pin-Priority: 850
+
+Package: linux-image-*
+Pin: release n=wheezy
+Pin-Priority: 900
+EOF
+cp config/archives/wheezy_backports.pref.chroot config/archives/wheezy_backports.pref.binary
+
+fi
+
+###########
+# TESTING #
+###########
+
+if [ "$TESTING" = true ] ; then
+
+cat << EOF > config/archives/testing.list.chroot
+deb $CHROOT_MIRROR testing $ARCHIVE_AREAS
+#deb-src $CHROOT_MIRROR testing $ARCHIVE_AREAS
+EOF
+cat << EOF > config/archives/testing.list.binary
+deb $BINARY_MIRROR testing $ARCHIVE_AREAS
+#deb-src $BINARY_MIRROR testing $ARCHIVE_AREAS
+EOF
+
+cat << EOF > config/archives/testing.pref.chroot
+Package: *
+Pin: release n=wheezy
+Pin-Priority: 800
+EOF
+cp config/archives/testing.pref.chroot config/archives/testing.pref.binary
+
+fi
+
+###################
+### CONFIG  END ###
+###################
+
+fi
+
+#########
+# BUILD #
+#########
+
+if [ "$BUILD" = true ] ; then
+
+START=$(date +%s.%N)
+
+lb build noauto "${@}" 2>&1 | tee build.log
+
+END=$(date +%s.%N)
+DIFF=$(echo "$END - $START" | bc)
+echo ""
+echo "Build time: "$(date -u -d @$DIFF +"%T")
+
+if [ -f binary.hybrid.iso ]; then
+
+echo "Image size: "$(ls -sh binary.hybrid.iso|awk '{print $1}')
+
+mv binary.hybrid.iso $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.hybrid.iso
+sha1sum $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.hybrid.iso > $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.hybrid.iso.sha1
+
+mv binary.hybrid.iso.zsync $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.hybrid.iso.zsync
+mv binary.packages $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.binary.packages
+mv binary.contents $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.binary.contents
+
+mv chroot.packages.install $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.chroot.packages.install
+mv chroot.packages.live $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.chroot.packages.live
+
+mv build.log $HOSTNAME-$BUILD_DAY-$ARCHITECTURE$FREE.build.log
+
+else
+
+echo "Build failed!"
+exit 1
+
+fi
+
+fi
