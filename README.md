@@ -8,7 +8,7 @@ Video: https://www.youtube.com/watch?v=-KrYcwrVSuI
 
 Builds with this config:
 
-<uploading ....>
+https://drive.google.com/file/d/0B-ND9Y9VRn9oQUxzN0ZkZmhralk/edit?usp=sharing
 d6bd4dabfa05b3306680a6491be38eda945f132d  mabian-20140817-amd64-non-free.hybrid.iso
 
 https://drive.google.com/file/d/0B-ND9Y9VRn9oWkZHbG00UU0zbU0/edit?usp=sharing
