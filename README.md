@@ -36,14 +36,18 @@ Script for building an installable live debian wheezy with mate as desktop envir
 ## AMD64
 https://drive.google.com/file/d/0B-ND9Y9VRn9oQUxzN0ZkZmhralk/edit?usp=sharing
 
+### sha1 checksum
+
 ```
-sha1 d6bd4dabfa05b3306680a6491be38eda945f132d  mabian-20140817-amd64-non-free.hybrid.iso
+d6bd4dabfa05b3306680a6491be38eda945f132d  mabian-20140817-amd64-non-free.hybrid.iso
 ```
 ## i386
 https://drive.google.com/file/d/0B-ND9Y9VRn9oWkZHbG00UU0zbU0/edit?usp=sharing
 
+### sha1 checksum
+
 ```
-sha1 c127f9cc92b56da680091fe707f6e9858244881a  mabian-20140817-i386-non-free.hybrid.iso
+c127f9cc92b56da680091fe707f6e9858244881a  mabian-20140817-i386-non-free.hybrid.iso
 ```
 
 # Install
