@@ -6,7 +6,7 @@ Script for building an installable live debian wheezy with mate as desktop envir
 
 #Video
 
-https://www.youtube.com/watch?v=-KrYcwrVSuI
+[![mabian GNU/Linux Video](http://img.youtube.com/vi/-KrYcwrVSuI/0.jpg)](http://www.youtube.com/watch?v=-KrYcwrVSuI)
 
 # Features
 
@@ -19,7 +19,7 @@ https://www.youtube.com/watch?v=-KrYcwrVSuI
 * Internet Browser: Iceweasel (Firefox)
 * Instant Messaging: Pidgin and X-Chat
 * Mail and calendar program: Icedove with Iceowl (Thunderbird with Lightning extension)
-* Multimedia: VLC Player and Totem
+* Multimedia: VLC Player, Totem and TvTime
 * Graphik: Pinta simple-scan
 * Games: gnome-games
 * Non-Free Stuff: Adobe Flash, libdvdcss2, mscorefonts, pipelight
@@ -65,6 +65,6 @@ See http://live.debian.net/manual/3.x/html/live-manual.en.html#529 for details.
 
 #Thanks
 
-Thanks to debian team for this great linux distrubution and this wonderful live-build script.
+Thanks to debian team for this great linux distribution and this wonderful live-build script.
 
 Thanks to the mate desktop team for keeping this very good desktop alive.
