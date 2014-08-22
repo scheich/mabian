@@ -67,6 +67,19 @@ You can add persistence by adding an ext4-partition with a file called persisten
 
 See http://live.debian.net/manual/3.x/html/live-manual.en.html#529 for details.
 
+## Remove unneeded language files
+
+Either you build it yourself and remove the entries in the build script or remove all after installation
+
+```
+sudo apt-get purge task-* myspell-* iceweasel-l10n-* libreoffice-l10n-* icedove-l10n-* hyphen-* mythes-* --autoremove
+```
+
+and afterwards install yours, e.g. for french:
+```
+sudo apt-get install task-french task-french-desktop iceweasel-l10n-fr icedove-l10n-fr iceowl-l10n-fr libreoffice-l10n-fr myspell-fr hyphen-fr mythes-fr
+```
+
 #Thanks
 
 Thanks to debian team for this great linux distribution and this wonderful live-build script.
